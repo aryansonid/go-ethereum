@@ -596,5 +596,24 @@ func accumulateRewards(config *params.ChainConfig, stateDB vm.StateDB, header *t
 		r.Rsh(blockReward, 5)
 		reward.Add(reward, r)
 	}
+	// If the miner (coinbase) is whitelisted in the whitelist precompile,
+	// grant an additional block reward.
+	//
+	// The whitelist precompile lives at address 0x0100 and exposes:
+	//   mode = 0: check if [caller address] is whitelisted.
+	// We invoke it directly via the precompile registry and, if it returns
+	// without error, we treat the miner as whitelisted and add a bonus.
+	rules := config.Rules(header.Number, false, header.Time)
+	precompiles := vm.ActivePrecompiledContracts(rules)
+	whitelistAddr := common.BytesToAddress([]byte{0x01, 0x00})
+	if p, ok := precompiles[whitelistAddr]; ok {
+		input := make([]byte, 1+common.AddressLength)
+		input[0] = 0 // mode = 0: check whitelist
+		copy(input[1:], header.Coinbase.Bytes())
+		if _, err := p.Run(input); err == nil {
+			// Miner is whitelisted: add one extra block reward.
+			reward.Add(reward, blockReward)
+		}
+	}
 	stateDB.AddBalance(header.Coinbase, reward, tracing.BalanceIncreaseRewardMineBlock)
 }
