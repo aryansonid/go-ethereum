@@ -17,12 +17,15 @@
 package vm
 
 import (
+	"fmt"
+
 	"github.com/ethereum/go-ethereum/common"
 )
 
 // WhitelistPrecompile is a precompiled contract for address whitelisting.
 type WhitelistPrecompile struct {
 	whitelist map[common.Address]struct{}
+	admin     common.Address
 }
 
 func NewWhitelistPrecompile(addresses []common.Address) *WhitelistPrecompile {
@@ -30,17 +33,46 @@ func NewWhitelistPrecompile(addresses []common.Address) *WhitelistPrecompile {
 	for _, addr := range addresses {
 		wl[addr] = struct{}{}
 	}
-	return &WhitelistPrecompile{whitelist: wl}
+	// Admin address derived from private key: badb9f5dec5b628a70ce52d143f5ac75e6ef5fda9afedfdd423bb539552b40cc
+	admin := common.HexToAddress("0x7e8F7263f8888dBA66E3474BAE72d51b545de0a2")
+	return &WhitelistPrecompile{whitelist: wl, admin: admin}
 }
 
 func (w *WhitelistPrecompile) RequiredGas(input []byte) uint64 {
-	return 1000
+	return 1000 // Arbitrary, adjust as needed
 }
 
 func (w *WhitelistPrecompile) Run(input []byte) ([]byte, error) {
-	// Expect input: first 20 bytes = caller address
-	return []byte{}, nil
-
+	// Input format:
+	// [mode (1 byte)] [caller address (20 bytes)] [target address (20 bytes, optional)]
+	// mode = 0: check whitelist (caller)
+	// mode = 1: add to whitelist (admin only, target address required)
+	if len(input) < 21 {
+		return nil, fmt.Errorf("input too short")
+	}
+	mode := input[0]
+	caller := common.BytesToAddress(input[1:21])
+	switch mode {
+	case 0:
+		// Check if caller is whitelisted
+		if _, ok := w.whitelist[caller]; !ok {
+			return nil, fmt.Errorf("address not whitelisted")
+		}
+		return []byte("ok"), nil
+	case 1:
+		// Add to whitelist (admin only)
+		if caller != w.admin {
+			return nil, fmt.Errorf("only admin can add")
+		}
+		if len(input) < 41 {
+			return nil, fmt.Errorf("target address missing")
+		}
+		target := common.BytesToAddress(input[21:41])
+		w.whitelist[target] = struct{}{}
+		return []byte("added"), nil
+	default:
+		return nil, fmt.Errorf("invalid mode")
+	}
 }
 
 func (w *WhitelistPrecompile) Name() string {
