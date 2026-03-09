@@ -14,7 +14,9 @@ COPY go.sum /go-ethereum/
 RUN cd /go-ethereum && go mod download
 
 ADD . /go-ethereum
-RUN cd /go-ethereum && go run build/ci.go install -static ./cmd/geth
+WORKDIR /go-ethereum
+RUN mkdir -p build/bin && \
+    CGO_ENABLED=0 go build -ldflags="-extldflags=-static" -o build/bin/geth ./cmd/geth
 
 # Pull Geth into a second stage deploy alpine container
 FROM alpine:latest
@@ -31,3 +33,13 @@ ARG VERSION=""
 ARG BUILDNUM=""
 
 LABEL commit="$COMMIT" version="$VERSION" buildnum="$BUILDNUM"
+
+# Copy scripts for node setup
+COPY docker/node1.sh /app/docker/node1.sh
+COPY docker/node2.sh /app/docker/node2.sh
+COPY docker/password.txt /app/docker/password.txt
+COPY docker/genesis.json /app/docker/genesis.json
+COPY docker/node1_keys.prv /app/docker/node1_keys.prv
+COPY docker/node2_keys.prv /app/docker/node2_keys.prv
+COPY docker/admin_key.prv /app/docker/admin_key.prv
+RUN chmod +x /app/docker/node1.sh /app/docker/node2.sh
